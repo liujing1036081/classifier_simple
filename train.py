@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 
+# -*- coding: utf-8 -*-
+import pydot
 import numpy as np
-from keras import Input, Model
-from keras.layers import Embedding, Dense, Dropout, Flatten, AveragePooling2D, GlobalAveragePooling1D
+from keras.models import Sequential, Model
+from keras.layers import Input
+from keras.layers import Embedding, Dense, Dropout, Flatten, GlobalAveragePooling2D, GlobalAveragePooling1D
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.utils import to_categorical
@@ -21,7 +24,7 @@ def data_preprocess(list):
     max_len = max([len(x) for x in list])
     print(u'最长句子长度max_len: ', max_len)
 
-    tokenizer = Tokenizer(num_words=None)  # 出现次数少于num_words的单词去掉
+    tokenizer = Tokenizer(num_words=None)  # 处理的最大单词数量
     tokenizer.fit_on_texts(res_list)
     sequences = tokenizer.texts_to_sequences(res_list)
     word_index = tokenizer.word_index
@@ -53,7 +56,54 @@ def pre_embedd(wordVecFile, word_index):
     return embedding_matrix
 
 
-# 构建model
+# 相同模型的三种不同构建方式
+'''
+1,序列化的构建model 1
+'''
+
+
+def build_model_sequential_one(word_index, embedding_matrix, max_len):
+    model = Sequential()
+    #     model.add(Dense((len(word_index)+1),input_shape=(max_len,)))
+    model.add(Embedding(len(word_index) + 1,  # Embedding()只能作第一层
+                        100,
+                        weights=[embedding_matrix],
+                        input_length=max_len,
+                        trainable=False
+                        ))
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.2))
+    model.add(Flatten())
+    model.add(Dense(3, activation='softmax'))
+    return model
+
+
+'''
+2,序列化构建model 2
+'''
+
+
+def build_model_sequential_two(word_index, embedding_matrix, max_len):
+    model = Sequential(
+        [Embedding(len(word_index) + 1,
+                   100,
+                   weights=[embedding_matrix],
+                   input_length=max_len,
+                   trainable=False
+                   ),
+         Dense(128, activation='relu'),
+         Dropout(0.2),
+         Flatten(),
+         Dense(3, activation='softmax')
+         ])
+    return model
+
+
+'''
+# 3,构建model functionally...
+'''
+
+
 def build_model(word_index, embedding_matrix, max_len):
     embedding_layer = Embedding(len(word_index) + 1,
                                 100,
@@ -69,11 +119,7 @@ def build_model(word_index, embedding_matrix, max_len):
     layer = Flatten()(layer)
     layer = Dense(128, activation='relu')(layer)
     preds = Dense(3, activation='softmax')(layer)
-
     model = Model(sequence_input, preds)
-    model.compile(loss='categorical_crossentropy',
-                  optimizer='rmsprop',
-                  metrics=['acc'])
     return model
 
 
@@ -92,7 +138,11 @@ def main():
 
     print('-----------')
     embedding_matrix = pre_embedd('CNLetterVec.100d.txt', word_index)
+    # model=build_model_sequential_one(word_index, embedding_matrix, max_len)
+    # model = build_model_sequential_two(word_index, embedding_matrix, max_len)
     model = build_model(word_index, embedding_matrix, max_len)
+    # print(model.to_yaml())
+
     batch_size = 5
     nb_epoch = 40
     VALIDATION_SPLIT = 0.2
@@ -103,11 +153,14 @@ def main():
     data = data[indices]
     labels = labels[indices]
     nb_validation_samples = int(VALIDATION_SPLIT * data.shape[0])
-
     x_train = data[:-nb_validation_samples]
     y_train = labels[:-nb_validation_samples]
     x_val = data[-nb_validation_samples:]
     y_val = labels[-nb_validation_samples:]
+
+    model.compile(loss='categorical_crossentropy',
+                  optimizer='rmsprop',
+                  metrics=['acc'])
 
     print('training.....')
     model.fit(x_train, y_train, batch_size=batch_size, epochs=nb_epoch, validation_data=(x_val, y_val))
